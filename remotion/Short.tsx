@@ -7,26 +7,36 @@ export type ShortProps = {
 };
 
 const BED_FRAMES = FPS * 4;
+const SAFE_X = 96;
+const SANS = "Arial, Helvetica, sans-serif";
+const DISPLAY = "Georgia, 'Times New Roman', serif";
 
 export function Short({ lines, template }: ShortProps) {
   const frame = useCurrentFrame();
   const plan = planLines(lines);
   const theme = themeFor(template);
   const placed = place(plan, frame);
+  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   return (
-    <AbsoluteFill style={{ background: theme.bg, color: theme.ink, fontFamily: "Georgia, 'Iowan Old Style', serif", overflow: "hidden" }}>
+    <AbsoluteFill style={{ background: theme.bg, color: theme.ink, fontFamily: SANS, overflow: "hidden" }}>
       <Loop durationInFrames={BED_FRAMES}>
         <Audio src="/bed.wav" volume={0.18} />
       </Loop>
-      <Backdrop template={template} frame={frame} theme={theme} />
-      <div style={{ position: "absolute", top: 96, left: 72, right: 72, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontFamily: "Segoe UI, sans-serif", letterSpacing: "0.22em", fontSize: 26, fontWeight: 700 }}>{templateLabel(template).toUpperCase()}</span>
-        <span style={{ fontFamily: "Segoe UI, sans-serif", fontSize: 26, opacity: 0.7 }}>{String((placed?.index ?? 0) + 1).padStart(2, "0")}</span>
+      <Backdrop template={template} frame={reduced ? 0 : frame} theme={theme} />
+      <div style={{ position: "absolute", top: 120, left: SAFE_X, right: SAFE_X, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ letterSpacing: "0.22em", fontSize: 22, fontWeight: 700 }}>{templateLabel(template).toUpperCase()}</span>
+        <span style={{ fontSize: 22, letterSpacing: "0.08em", opacity: 0.72 }}>{String((placed?.index ?? 0) + 1).padStart(2, "0")}</span>
       </div>
-      {placed ? <Stage placed={placed} frame={frame} theme={theme} template={template} /> : frame < (plan.lines[0]?.start ?? 12) ? <TitleCard template={template} theme={theme} /> : <EndCard theme={theme} />}
-      <div style={{ position: "absolute", left: 72, right: 72, bottom: 72, height: 8, background: "rgba(255,255,255,0.16)", borderRadius: 99 }}>
-        <div style={{ width: `${Math.min(100, (frame / Math.max(plan.durationInFrames, 1)) * 100)}%`, height: "100%", background: theme.accent, borderRadius: 99 }} />
+      {placed ? (
+        <Stage placed={placed} frame={frame} theme={theme} template={template} reduced={reduced} />
+      ) : frame < (plan.lines[0]?.start ?? 24) ? (
+        <TitleCard template={template} theme={theme} />
+      ) : (
+        <EndCard theme={theme} />
+      )}
+      <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, bottom: 72, height: 6, background: "rgba(255,255,255,0.16)" }}>
+        <div style={{ width: `${Math.min(100, (frame / Math.max(plan.durationInFrames, 1)) * 100)}%`, height: "100%", background: theme.accent }} />
       </div>
     </AbsoluteFill>
   );
@@ -43,30 +53,55 @@ function place(plan: Plan, frame: number): Placed | null {
   return { line, index, wordIndex };
 }
 
-function Stage({ placed, frame, theme, template }: { placed: Placed; frame: number; theme: Theme; template: TemplateId }) {
+function Stage({
+  placed,
+  frame,
+  theme,
+  template,
+  reduced,
+}: {
+  placed: Placed;
+  frame: number;
+  theme: Theme;
+  template: TemplateId;
+  reduced: boolean;
+}) {
   const local = frame - placed.line.start;
   const word = placed.line.words[placed.wordIndex];
   const wordStart = word?.start ?? 0;
-  const pop = interpolate(local - wordStart, [0, 6], [0.92, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  if (template === "list") return <ListCard placed={placed} theme={theme} pop={pop} />;
-  if (template === "story") return <StoryCard placed={placed} theme={theme} pop={pop} />;
-  return <HookCard placed={placed} theme={theme} pop={pop} />;
+  const pop = reduced ? 1 : interpolate(local - wordStart, [0, 6], [0.98, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  switch (template) {
+    case "list":
+      return <ListCard placed={placed} theme={theme} pop={pop} />;
+    case "story":
+      return <StoryCard placed={placed} theme={theme} pop={pop} />;
+    case "hook":
+      return <HookCard placed={placed} theme={theme} pop={pop} />;
+    default: {
+      const unexpected: never = template;
+      return unexpected;
+    }
+  }
+}
+
+function LineWords({ placed, active, idle }: { placed: Placed; active: string; idle: string }) {
+  return (
+    <>
+      {placed.line.words.map((item, index) => (
+        <span key={`${item.text}-${item.start}`} style={{ color: index === placed.wordIndex ? active : idle }}>
+          {item.text}{" "}
+        </span>
+      ))}
+    </>
+  );
 }
 
 function HookCard({ placed, theme, pop }: { placed: Placed; theme: Theme; pop: number }) {
-  const word = placed.line.words[placed.wordIndex]?.text ?? "";
   return (
-    <div style={{ position: "absolute", left: 72, right: 72, top: 420 }}>
-      <div style={{ width: 84, height: 10, background: theme.accent, marginBottom: 36 }} />
-      <div style={{ fontSize: 168, lineHeight: 0.86, fontWeight: 700, letterSpacing: "-0.045em", transform: `scale(${pop})`, transformOrigin: "left center" }}>
-        {word.replace(/[^\p{L}\p{N}'’-]+/gu, "")}
-      </div>
-      <p style={{ margin: "36px 0 0", fontFamily: "Segoe UI, sans-serif", fontSize: 42, lineHeight: 1.25, color: "rgba(246,240,230,0.72)" }}>
-        {placed.line.words.map((item, index) => (
-          <span key={`${item.text}-${item.start}`} style={{ color: index === placed.wordIndex ? theme.accent : "inherit" }}>
-            {item.text}{" "}
-          </span>
-        ))}
+    <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, top: 640 }}>
+      <div style={{ width: 72, height: 8, background: theme.accent, marginBottom: 28 }} />
+      <p style={{ margin: 0, fontSize: 78, lineHeight: 1.02, fontWeight: 800, letterSpacing: "-0.035em", transform: `scale(${pop})`, transformOrigin: "left center" }}>
+        <LineWords placed={placed} active={theme.accent} idle={theme.ink} />
       </p>
     </div>
   );
@@ -74,14 +109,10 @@ function HookCard({ placed, theme, pop }: { placed: Placed; theme: Theme; pop: n
 
 function ListCard({ placed, theme, pop }: { placed: Placed; theme: Theme; pop: number }) {
   return (
-    <div style={{ position: "absolute", left: 72, right: 72, top: 360 }}>
-      <div style={{ fontSize: 220, lineHeight: 0.8, fontWeight: 700, color: theme.accent, opacity: 0.95 }}>{String(placed.index + 1).padStart(2, "0")}</div>
-      <p style={{ margin: "12px 0 0", fontSize: 72, lineHeight: 1.05, fontWeight: 700, transform: `scale(${pop})`, transformOrigin: "left center" }}>
-        {placed.line.words.map((item, index) => (
-          <span key={`${item.text}-${item.start}`} style={{ color: index === placed.wordIndex ? theme.ink : "rgba(244,247,239,0.45)" }}>
-            {item.text}{" "}
-          </span>
-        ))}
+    <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, top: 520 }}>
+      <div style={{ fontFamily: DISPLAY, fontSize: 180, lineHeight: 0.8, fontWeight: 700, color: theme.accent }}>{String(placed.index + 1).padStart(2, "0")}</div>
+      <p style={{ margin: "28px 0 0", fontSize: 64, lineHeight: 1.08, fontWeight: 800, transform: `scale(${pop})`, transformOrigin: "left center" }}>
+        <LineWords placed={placed} active={theme.ink} idle="rgba(244,247,239,0.42)" />
       </p>
     </div>
   );
@@ -89,54 +120,55 @@ function ListCard({ placed, theme, pop }: { placed: Placed; theme: Theme; pop: n
 
 function StoryCard({ placed, theme, pop }: { placed: Placed; theme: Theme; pop: number }) {
   return (
-    <div style={{ position: "absolute", left: 0, right: 0, top: 560 }}>
-      <div style={{ height: 220, background: "rgba(8,10,18,0.55)" }} />
-      <div style={{ position: "absolute", left: 72, right: 72, top: 36, transform: `scale(${pop})`, transformOrigin: "left center" }}>
-        <p style={{ margin: 0, fontSize: 58, lineHeight: 1.12, fontWeight: 700 }}>
-          {placed.line.words.map((item, index) => (
-            <span key={`${item.text}-${item.start}`} style={{ color: index === placed.wordIndex ? theme.accent : theme.ink }}>
-              {item.text}{" "}
-            </span>
-          ))}
-        </p>
-      </div>
+    <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, bottom: 240 }}>
+      <div style={{ height: 6, width: 72, background: theme.accent, marginBottom: 22 }} />
+      <p style={{ margin: 0, fontSize: 52, lineHeight: 1.16, fontWeight: 750, transform: `scale(${pop})`, transformOrigin: "left center" }}>
+        <LineWords placed={placed} active={theme.accent} idle={theme.ink} />
+      </p>
     </div>
   );
 }
 
 function TitleCard({ template, theme }: { template: TemplateId; theme: Theme }) {
   return (
-    <div style={{ position: "absolute", left: 72, right: 72, top: 620 }}>
-      <p style={{ margin: 0, fontSize: 108, lineHeight: 0.88, fontWeight: 700 }}>{templateLabel(template)}</p>
-      <p style={{ margin: "28px 0 0", fontFamily: "Segoe UI, sans-serif", fontSize: 36, color: theme.accent }}>From a script</p>
+    <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, top: 700 }}>
+      <div style={{ width: 72, height: 8, background: theme.accent, marginBottom: 28 }} />
+      <p style={{ margin: 0, fontFamily: DISPLAY, fontSize: 108, lineHeight: 0.9, fontWeight: 700 }}>{templateLabel(template)}</p>
+      <p style={{ margin: "28px 0 0", fontSize: 32, letterSpacing: "0.14em", textTransform: "uppercase", color: theme.accent }}>From a script</p>
     </div>
   );
 }
 
 function EndCard({ theme }: { theme: Theme }) {
   return (
-    <div style={{ position: "absolute", left: 72, right: 72, top: 680 }}>
-      <p style={{ margin: 0, fontSize: 96, lineHeight: 0.92, fontWeight: 700 }}>Cut locked.</p>
-      <p style={{ margin: "24px 0 0", fontFamily: "Segoe UI, sans-serif", fontSize: 34, color: theme.accent }}>Rendered in the browser</p>
+    <div style={{ position: "absolute", left: SAFE_X, right: SAFE_X, top: 720 }}>
+      <div style={{ width: 72, height: 8, background: theme.accent, marginBottom: 28 }} />
+      <p style={{ margin: 0, fontFamily: DISPLAY, fontSize: 92, lineHeight: 0.92, fontWeight: 700 }}>Cut locked.</p>
+      <p style={{ margin: "24px 0 0", fontSize: 30, letterSpacing: "0.12em", textTransform: "uppercase", color: theme.accent }}>Rendered in the browser</p>
     </div>
   );
 }
 
 function Backdrop({ template, frame, theme }: { template: TemplateId; frame: number; theme: Theme }) {
-  const drift = interpolate(frame % 180, [0, 180], [0, 40]);
-  if (template === "list") {
-    return <AbsoluteFill style={{ background: `radial-gradient(circle at ${20 + drift / 4}% 80%, rgba(198,242,109,0.2), transparent 42%)` }} />;
+  const drift = interpolate(frame % 180, [0, 180], [0, 24]);
+  switch (template) {
+    case "list":
+      return <AbsoluteFill style={{ background: `radial-gradient(circle at ${18 + drift / 8}% 78%, rgba(215,255,74,0.14), transparent 42%)` }} />;
+    case "story":
+      return (
+        <AbsoluteFill>
+          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 160, background: "#07080d" }} />
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 200, background: "#07080d" }} />
+          <AbsoluteFill style={{ background: theme.glow }} />
+        </AbsoluteFill>
+      );
+    case "hook":
+      return <AbsoluteFill style={{ background: `radial-gradient(circle at 50% ${16 + drift / 12}%, rgba(245,196,81,0.2), transparent 46%)` }} />;
+    default: {
+      const unexpected: never = template;
+      return unexpected;
+    }
   }
-  if (template === "story") {
-    return (
-      <AbsoluteFill>
-        <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 140, background: "#07080d" }} />
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 180, background: "#07080d" }} />
-        <AbsoluteFill style={{ background: theme.glow }} />
-      </AbsoluteFill>
-    );
-  }
-  return <AbsoluteFill style={{ background: `radial-gradient(circle at 50% ${18 + drift / 10}%, rgba(255,92,28,0.42), transparent 46%)` }} />;
 }
 
 type Theme = { bg: string; glow: string; ink: string; accent: string };
@@ -144,11 +176,11 @@ type Theme = { bg: string; glow: string; ink: string; accent: string };
 function themeFor(template: TemplateId): Theme {
   switch (template) {
     case "hook":
-      return { bg: "#120e0c", glow: "transparent", ink: "#f6f0e6", accent: "#ff5c1c" };
+      return { bg: "#0c0c0c", glow: "transparent", ink: "#f4f1ea", accent: "#f5c451" };
     case "list":
-      return { bg: "#10160f", glow: "transparent", ink: "#f4f7ef", accent: "#c6f26d" };
+      return { bg: "#101311", glow: "transparent", ink: "#f4f7ef", accent: "#d7ff4a" };
     case "story":
-      return { bg: "#171b2e", glow: "radial-gradient(circle at 80% 20%, rgba(232,214,176,0.16), transparent 36%)", ink: "#f7f1e6", accent: "#e8d6b0" };
+      return { bg: "#0e1016", glow: "radial-gradient(circle at 80% 18%, rgba(240,226,196,0.12), transparent 36%)", ink: "#f7f1e6", accent: "#f0e2c4" };
     default: {
       const unexpected: never = template;
       return unexpected;

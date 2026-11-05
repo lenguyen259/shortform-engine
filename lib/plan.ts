@@ -69,7 +69,7 @@ export function preset(id: TemplateId): Line[] {
 }
 
 export function planLines(lines: Line[]): Plan {
-  let cursor = 12;
+  let cursor = 24;
   const timed: TimedLine[] = lines
     .map((line) => ({ ...line, text: line.text.trim() }))
     .filter((line) => line.text.length > 0)
