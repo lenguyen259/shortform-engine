@@ -1,32 +1,62 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { Short } from "../remotion/Short";
 import { FPS, planLines, preset, templateLabel, type Line, type TemplateId } from "../lib/plan";
+import { FrameVoice, type SpokenWord } from "../lib/voice";
 
 const TEMPLATES: TemplateId[] = ["hook", "list", "story"];
 
 export function Desk() {
   const [template, setTemplate] = useState<TemplateId>("hook");
   const [lines, setLines] = useState<Line[]>(() => preset("hook"));
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState("Play with voice moves the frame onto each spoken word.");
   const player = useRef<PlayerRef>(null);
+  const voice = useRef(new FrameVoice());
   const plan = useMemo(() => planLines(lines), [lines]);
+  const planRef = useRef(plan);
+  planRef.current = plan;
+
+  useEffect(() => {
+    let frame = 0;
+    const loop = () => {
+      const sample = voice.current.sample();
+      const duration = planRef.current.durationInFrames;
+      if (sample !== null && player.current) {
+        const next = Math.max(0, Math.min(duration - 1, Math.round(sample * FPS)));
+        player.current.seekTo(next);
+      }
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(frame);
+      voice.current.stop();
+    };
+  }, []);
 
   function choose(next: TemplateId) {
+    voice.current.stop();
     setTemplate(next);
     setLines(preset(next));
-    setNote("");
+    setNote("Play with voice moves the frame onto each spoken word.");
   }
 
   function update(id: string, text: string) {
+    voice.current.stop();
     setLines((current) => current.map((line) => (line.id === id ? { ...line, text } : line)));
   }
 
   function playWithVoice() {
-    const text = lines.map((line) => line.text.trim()).filter(Boolean).join(". ");
-    if (!text) {
+    const words: SpokenWord[] = plan.lines.flatMap((line) =>
+      line.words.map((word) => ({
+        text: word.text,
+        start: (line.start + word.start) / FPS,
+        end: (line.start + word.end) / FPS,
+      })),
+    );
+    if (words.length === 0) {
       setNote("Add a line before playing.");
       return;
     }
@@ -34,13 +64,14 @@ export function Desk() {
       setNote("This browser has no speech synthesis.");
       return;
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    window.speechSynthesis.speak(utterance);
-    player.current?.seekTo(0);
-    player.current?.play();
-    setNote("Voice is the browser speech engine. Captions stay on the timeline.");
+    player.current?.pause();
+    player.current?.seekTo(Math.round(words[0].start));
+    voice.current.onEnded = (time) => {
+      player.current?.seekTo(Math.min(plan.durationInFrames - 1, Math.round(time * FPS)));
+      setNote("The last word landed on its frame.");
+    };
+    voice.current.start(words, words[0].start - 0.01);
+    setNote("Voice is the clock. The active word is the word you hear.");
   }
 
   return (
