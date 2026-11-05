@@ -7,7 +7,7 @@ const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Shortform Engine",
-  description: "Programmatic vertical shorts in Remotion. Voice uses the browser speech engine. Music is an original bed.",
+  description: "Zero-touch 9:16 shorts from a script or JSON file. Remotion renders a finished 30–60 second cut in the browser.",
 };
 
 export const viewport: Viewport = {
